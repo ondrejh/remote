@@ -12,8 +12,10 @@ int main(void) {
         char fname[128];
         int p = sprintf(fname, dir);
         p += sprintf(&fname[p], fnames[i]);
+        int cId = contIds[i];
+        char const *cont = contents[cId];
 
-        printf("%s %d ", fnames[i], flengths[i]);
+        printf("%s %d %s %d ", fnames[i], cId, cont, flengths[i]);
 
         FILE *fp;
         fp = fopen(fname, "r");
