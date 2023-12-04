@@ -28,17 +28,28 @@
    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include <WiFi.h>
-#include <WiFiClient.h>
-#include <WebServer.h>
-#include <ESPmDNS.h>
+#ifdef ESP32
+  #include <WiFi.h>
+  #include <WiFiClient.h>
+  #include <WebServer.h>
+  #include <ESPmDNS.h>
+#else
+  #include <ESP8266WiFi.h>
+  #include <WiFiClient.h>
+  #include <ESP8266WebServer.h>
+  #include <ESP8266mDNS.h>
+#endif
 
 #include <ArduinoJson.h>
 
 #include "secrets.h"
 #include "webi.h"
 
-WebServer server(80);
+#ifdef ESP32
+  WebServer server(80);
+#else
+  ESP8266WebServer server(80);
+#endif
 
 StaticJsonDocument<1024> doc;
 
@@ -76,10 +87,8 @@ void handleStatic(int i) {
     digitalWrite(led, 1);
     Serial.println(fnames[i]);
     server.setContentLength(flengths[i]);
-    //server.sendHeader("Content-Length", flengths[i]);
     server.send(200, contents[contIds[i]], "");
     server.sendContent_P(fdata[i], flengths[i]);
-    //server.send(200, contents[contIds[i]], fdata[i]);
     digitalWrite(led, 0);
   }
   else {
@@ -146,10 +155,7 @@ void setup(void) {
   }
 
   server.on("/", handleRoot);
-  /*server.on("/test.svg", drawGraph);
-  server.on("/inline", []() {
-    server.send(200, "text/plain", "this works as well");
-  });*/
+
   server.on("/data.json", handleData);
   server.on("/data.json", HTTP_POST, handleData);
 
