@@ -33,41 +33,23 @@
 #include <WebServer.h>
 #include <ESPmDNS.h>
 
+#include <ArduinoJson.h>
+
 #include "secrets.h"
 #include "webi.h"
 
 WebServer server(80);
 
+StaticJsonDocument<1024> doc;
+
 const int led = 13;
 
 void handleRoot() {
-  digitalWrite(led, 1);
-  char temp[400];
-  int sec = millis() / 1000;
-  int min = sec / 60;
-  int hr = min / 60;
-
-  snprintf(temp, 400,
-
-           "<html>\
-  <head>\
-    <meta http-equiv='refresh' content='5'/>\
-    <title>ESP32 Demo</title>\
-    <style>\
-      body { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\
-    </style>\
-  </head>\
-  <body>\
-    <h1>Hello from ESP32!</h1>\
-    <p>Uptime: %02d:%02d:%02d</p>\
-    <img src=\"/test.svg\" />\
-  </body>\
-</html>",
-
-           hr, min % 60, sec % 60
-          );
-  server.send(200, "text/html", temp);
-  digitalWrite(led, 0);
+    digitalWrite(led, 1);
+    server.setContentLength(INDEX_HTML_LEN);
+    server.send(200, "text/html", "");
+    server.sendContent_P(index_html_bin, INDEX_HTML_LEN);
+    digitalWrite(led, 0);
 }
 
 void handleNotFound() {
@@ -105,6 +87,14 @@ void handleStatic(int i) {
   }
 }
 
+void handleData() {
+  digitalWrite(led, 0);
+  String output;
+  serializeJson(doc, output);
+  server.send(200, "application/json", output);
+  digitalWrite(led, 1);
+}
+
 void setup(void) {
   pinMode(led, OUTPUT);
   digitalWrite(led, 0);
@@ -112,6 +102,18 @@ void setup(void) {
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
   Serial.println("");
+
+  JsonObject jsroot = doc.to<JsonObject>();
+  jsroot["cnt"] = 0.0;
+  JsonObject jscontrol = jsroot.createNestedObject("control");
+  jscontrol["right"] = false;
+  jscontrol["left"] = false;
+  jscontrol["up"] = false;
+  jscontrol["down"] = false;
+  jscontrol["light"] = false;
+  JsonObject jsactual = jsroot.createNestedObject("actual");
+  jsactual["acc"] = 0.0;
+  jsactual["dir"] = 0.0;
 
   // Wait for connection
   while (WiFi.status() != WL_CONNECTED) {
@@ -130,10 +132,11 @@ void setup(void) {
   }
 
   server.on("/", handleRoot);
-  server.on("/test.svg", drawGraph);
+  /*server.on("/test.svg", drawGraph);
   server.on("/inline", []() {
     server.send(200, "text/plain", "this works as well");
-  });
+  });*/
+  server.on("/data.json", handleData);
 
   server.on(fnames[0], [](){handleStatic(0);});
   server.on(fnames[1], [](){handleStatic(1);});
