@@ -34,6 +34,7 @@
 #include <ESPmDNS.h>
 
 #include "secrets.h"
+#include "webi.h"
 
 WebServer server(80);
 
@@ -88,6 +89,22 @@ void handleNotFound() {
   digitalWrite(led, 0);
 }
 
+void handleStatic(int i) {
+  if (i < NFILES) {
+    digitalWrite(led, 1);
+    Serial.println(fnames[i]);
+    server.setContentLength(flengths[i]);
+    //server.sendHeader("Content-Length", flengths[i]);
+    server.send(200, contents[contIds[i]], "");
+    server.sendContent_P(fdata[i], flengths[i]);
+    //server.send(200, contents[contIds[i]], fdata[i]);
+    digitalWrite(led, 0);
+  }
+  else {
+    handleNotFound();
+  }
+}
+
 void setup(void) {
   pinMode(led, OUTPUT);
   digitalWrite(led, 0);
@@ -117,6 +134,12 @@ void setup(void) {
   server.on("/inline", []() {
     server.send(200, "text/plain", "this works as well");
   });
+
+  server.on(fnames[0], [](){handleStatic(0);});
+  server.on(fnames[1], [](){handleStatic(1);});
+  server.on(fnames[2], [](){handleStatic(2);});
+  server.on(fnames[3], [](){handleStatic(3);});
+
   server.onNotFound(handleNotFound);
   server.begin();
   Serial.println("HTTP server started");
