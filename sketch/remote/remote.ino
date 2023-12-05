@@ -51,9 +51,10 @@
   ESP8266WebServer server(80);
 #endif
 
-StaticJsonDocument<1024> doc;
+StaticJsonDocument<512> doc;
 
-const int led = 13;
+const int led = 2;
+const int bat = 36;
 
 void handleRoot() {
     digitalWrite(led, 1);
@@ -97,7 +98,7 @@ void handleStatic(int i) {
 }
 
 void handleData() {
-  digitalWrite(led, 0);
+  digitalWrite(led, 1);
   if (server.method() == HTTP_POST) {
     StaticJsonDocument<256> rec;
     DeserializationError error = deserializeJson(rec, server.arg("plain"));
@@ -115,11 +116,12 @@ void handleData() {
   String output;
   serializeJson(doc, output);
   server.send(200, "application/json", output);
-  digitalWrite(led, 1);
+  digitalWrite(led, 0);
 }
 
 void setup(void) {
   pinMode(led, OUTPUT);
+  pinMode(bat, INPUT); // battery analog input
   digitalWrite(led, 0);
   Serial.begin(115200);
   WiFi.mode(WIFI_STA);
@@ -137,6 +139,7 @@ void setup(void) {
   JsonObject jsactual = jsroot.createNestedObject("actual");
   jsactual["acc"] = 0.0;
   jsactual["dir"] = 0.0;
+  jsactual["bat"] = 0.0;
 
   // Wait for connection
   while (WiFi.status() != WL_CONNECTED) {
@@ -169,7 +172,34 @@ void setup(void) {
   Serial.println("HTTP server started");
 }
 
+bool pollBatteryVoltage(uint32_t now) {
+  static uint32_t tbat = 0;
+  static int buff[16];
+  static int p = 0;
+  if ((now - tbat) >= 100) {
+    buff[p++] = analogRead(bat);
+    p &= 0x0F;
+    int adc = 0;
+    for (int i=0; i<16; i++)
+      adc += buff[i];
+    doc["actual"]["bat"] = (float)adc * (6.94 / (1380 * 16));
+    tbat = now; //+= 100;
+    return true;
+  }
+  return false;
+}
+
 void loop(void) {
   server.handleClient();
-  delay(2);//allow the cpu to switch to other tasks
+  
+  uint32_t now = millis();
+  static uint32_t tcnt = 0;
+  if (pollBatteryVoltage(now)) {}
+  else if ((now - tcnt) >= 1000) {
+    uint32_t cnt = doc["cnt"];
+    cnt ++;
+    doc["cnt"] = cnt;
+    tcnt = now; //+= 1000;
+  }
+  else delay(1);//allow the cpu to switch to other tasks
 }

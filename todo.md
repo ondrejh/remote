@@ -1,0 +1,5 @@
+- [ ] AP mode
+- [ ] control output (acceleration and dirrection)
+- [ ] turn output values to PWM (and servo)
+- [ ] HW prototyp, schema
+- [x] ADC měření napětí akumulátoru
