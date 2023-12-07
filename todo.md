@@ -1,21 +1,24 @@
 # ToDo:
 
-- [ ] AP mode
-- [x] control output (acceleration and dirrection)
-- [ ] turn output values to PWM (and servo)
-- [ ] HW prototyp, schema
-- [x] ADC měření napětí akumulátoru
+- [x] AP mode
+- [ ] Exclusive ssid using mac
+- [x] Control output (acceleration and dirrection)
+- [x] Turn output values to PWM (and servo)
+- [x] HW prototyp
+- [ ] Schematic and some other docu
+- [x] ADC accu voltage measurement
+- [ ] Send data allways (to ensure motor off)
 
 ## HW:
 
-ADC měření napětí akumulátoru:
+ADC accu voltage measurement:
 
-- dělič 1k0, 4k7
+- volt. div. 1k0, 4k7
 - pin ADC1_0, GPIO36
-- ADC2_x nelze použít když je WiFi (viz https://lastminuteengineers.com/esp32-basics-adc)
-- filtr 100nF kondenzátor
+- ADC2_x can't be used when WiFi is ON (viz https://lastminuteengineers.com/esp32-basics-adc)
+- filter capacitor 100nF
 
-PWM motory:
+PWM motor outputs:
 
 - MX1508 driver (2 x full bridge)
 - GPIO16 -> IN4
@@ -23,14 +26,14 @@ PWM motory:
 - GPIO18 -> IN2
 - GPIO19 -> IN1
 
-PWM serva:
+PWM servos:
 
 - GPIO13, GPIO14
 
-OC světla:
+OC lights:
 
 - GPIO26, GPIO27
 
-Bzučák:
+Beeper:
 
 - GPIO32

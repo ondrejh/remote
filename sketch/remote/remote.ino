@@ -42,7 +42,21 @@
 
 #include <ArduinoJson.h>
 
+#define AP_MODE
+
+#ifdef AP_MODE
+/* Put your SSID & Password */
+const char* ssid = "ESP32";  // Enter SSID here
+const char* password = "12345678";  //Enter Password here
+
+/* Put IP Address details */
+IPAddress local_ip(192,168,1,1);
+IPAddress gateway(192,168,1,1);
+IPAddress subnet(255,255,255,0);
+#else
 #include "secrets.h"
+#endif
+
 #include "webi.h"
 
 #ifdef ESP32
@@ -73,6 +87,10 @@ const int OC_CH1 = 26;
 const int OC_CH2 = 27;
 
 const int BEEP = 32;
+
+const int PWM_LIMIT = 50; // %
+const bool SERVO_SWAP = true;
+const int SERVO_LIMIT = 75; // %
 
 StaticJsonDocument<512> doc;
 
@@ -147,9 +165,19 @@ void setup(void) {
   pinMode(led, OUTPUT);
   digitalWrite(led, 0);
   Serial.begin(115200);
+  Serial.println("");
+
+#ifdef AP_MODE
+  // Create AP
+  Serial.print("Create AP: ");
+  Serial.println(ssid);
+  WiFi.softAP(ssid, password);
+  WiFi.softAPConfig(local_ip, gateway, subnet);
+#else
+  // Connect to Wi-Fi network with SSID and password
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
-  Serial.println("");
+#endif
 
   // battery voltage adc input
   pinMode(bat, INPUT); // battery analog input
@@ -204,6 +232,10 @@ void setup(void) {
   jsactual["dir"] = 0.0;
   jsactual["bat"] = 0.0;
 
+#ifdef AP_MODE
+  Serial.print("IP address: ");
+  Serial.println(local_ip);
+#else
   // Wait for connection
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
@@ -212,9 +244,10 @@ void setup(void) {
 
   Serial.println("");
   Serial.print("Connected to ");
-  Serial.println(ssid);
+  Serial.println(ssid);*/
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
+#endif
 
   if (MDNS.begin("esp32")) {
     Serial.println("MDNS responder started");
@@ -280,7 +313,7 @@ float addVal(bool add, bool sub, float val, float dt, float speed, float decay) 
 }
 
 void setPWM(float val, const int pwmP, const int pwmN) {
-  int dc = 255.0 * abs(val);
+  int dc = 255.0 * abs(val) * ((float)PWM_LIMIT / 100.0);
   if (dc > 255)
     dc = 255;
   if (val > 0) {
@@ -294,7 +327,7 @@ void setPWM(float val, const int pwmP, const int pwmN) {
 }
 
 void setServo(float val, const int pwm) {
-  int dc = 204.8 * (1.5 + val / 2.0);
+  int dc = 204.8 * (1.5 + val / 2.0 * (SERVO_SWAP ? -1.0 : 1.0) * ((float)SERVO_LIMIT / 100.0));
   if (dc > 410) dc = 410;
   if (dc < 205) dc = 205;
   ledcWrite(pwm, dc);
@@ -303,7 +336,7 @@ void setServo(float val, const int pwm) {
 bool pollControl(uint32_t now) {
   static uint32_t tspd = 0;
   if ((now - tspd) >= 5) {
-    float acc = addVal(doc["control"]["up"], doc["control"]["down"], doc["actual"]["acc"], 0.005, 3.0, 1.0);
+    float acc = addVal(doc["control"]["up"], doc["control"]["down"], doc["actual"]["acc"], 0.005, 4.0, 2.5);
     float dir = addVal(doc["control"]["right"], doc["control"]["left"], doc["actual"]["dir"], 0.005, 3.0, 1.0);
     setPWM(acc, PWM_CHANNEL_1, PWM_CHANNEL_2);
     setPWM(acc, PWM_CHANNEL_3, PWM_CHANNEL_4);
