@@ -1,11 +1,12 @@
 # ToDo:
 
 - [x] AP mode
-- [ ] Exclusive ssid using mac
+- [x] Exclusive ssid using mac
 - [x] Control output (acceleration and dirrection)
 - [x] Turn output values to PWM (and servo)
 - [x] HW prototyp
-- [ ] Schematic and some other docu
+- [x] Some other docu (readme)
+- [ ] Schematic
 - [x] ADC accu voltage measurement
 - [ ] Send data allways (to ensure motor off)
 

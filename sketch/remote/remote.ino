@@ -1,31 +1,28 @@
 /*
+  Web interface remote controller.
+
+  The program is based on Arduino AdvancedWebServer example.
+  I uses Arduinojson library (by Benoit Blanchon) to prepare json data and to parse
+  json POST input data.
+
+  Author: Ondrej Hejda
+  Date: 12.2023
+
+  Other sources used:
+
+  AP mode:
+    https://lastminuteengineers.com/creating-esp32-web-server-arduino-ide/
+
+  PWM:
+    https://lastminuteengineers.com/esp32-pwm-tutorial/
+
+  ESP dev board pinout and pin restrictions:
+    https://lastminuteengineers.com/esp32-pinout-reference/
+
+  ADC:
+    https://lastminuteengineers.com/esp32-basics-adc/
    Copyright (c) 2015, Majenko Technologies
    All rights reserved.
-
-   Redistribution and use in source and binary forms, with or without modification,
-   are permitted provided that the following conditions are met:
-
- * * Redistributions of source code must retain the above copyright notice, this
-     list of conditions and the following disclaimer.
-
- * * Redistributions in binary form must reproduce the above copyright notice, this
-     list of conditions and the following disclaimer in the documentation and/or
-     other materials provided with the distribution.
-
- * * Neither the name of Majenko Technologies nor the names of its
-     contributors may be used to endorse or promote products derived from
-     this software without specific prior written permission.
-
-   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-   ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-   WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-   DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
-   ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-   (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-   LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
-   ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #ifdef ESP32
@@ -46,12 +43,12 @@
 
 #ifdef AP_MODE
 /* Put your SSID & Password */
-const char* ssid = "ESP32";  // Enter SSID here
-const char* password = "12345678";  //Enter Password here
+char ssid[16] = "rem";
+const char* password = "remote123";  //Enter Password here
 
 /* Put IP Address details */
-IPAddress local_ip(192,168,1,1);
-IPAddress gateway(192,168,1,1);
+IPAddress local_ip(192,168,48,1);
+IPAddress gateway(192,168,48,1);
 IPAddress subnet(255,255,255,0);
 #else
 #include "secrets.h"
@@ -161,6 +158,93 @@ void handleData() {
   digitalWrite(led, 0);
 }
 
+
+bool pollBatteryVoltage(uint32_t now) {
+  static uint32_t tbat = 0;
+  static int buff[16];
+  static int p = 0;
+  if ((now - tbat) >= 100) {
+    buff[p++] = analogRead(bat);
+    p &= 0x0F;
+    int adc = 0;
+    for (int i=0; i<16; i++)
+      adc += buff[i];
+    doc["actual"]["bat"] = (float)adc * (6.94 / (1380 * 16));
+    tbat = now; //+= 100;
+    return true;
+  }
+  return false;
+}
+
+float addVal(bool add, bool sub, float val, float dt, float speed, float decay) {
+  float v = val;
+  if (add) {
+    v += dt * speed;
+    if (v > 1.0)
+      v = 1.0;
+  }
+  else if (sub) {
+    v -= dt * speed;
+    if (v < -1.0)
+      v = -1.0;
+  }
+  else if (v > 0.0) {
+    v -= dt * decay;
+    if (v < 0.0) {
+      v = 0.0;
+    }
+  }
+  else if (v < 0.0) {
+    v += dt * decay;
+    if (v > 0.0) {
+      v = 0.0;
+    }
+  }
+  return v;
+}
+
+void setPWM(float val, const int pwmP, const int pwmN) {
+  int dc = 255.0 * abs(val) * ((float)PWM_LIMIT / 100.0);
+  if (dc > 255)
+    dc = 255;
+  if (val > 0) {
+    ledcWrite(pwmN, 0);
+    ledcWrite(pwmP, dc);
+  }
+  else {
+    ledcWrite(pwmP, 0);
+    ledcWrite(pwmN, dc);
+  }
+}
+
+void setServo(float val, const int pwm) {
+  int dc = 204.8 * (1.5 + val / 2.0 * (SERVO_SWAP ? -1.0 : 1.0) * ((float)SERVO_LIMIT / 100.0));
+  if (dc > 410) dc = 410;
+  if (dc < 205) dc = 205;
+  ledcWrite(pwm, dc);
+}
+
+bool pollControl(uint32_t now) {
+  static uint32_t tspd = 0;
+  if ((now - tspd) >= 5) {
+    float acc = addVal(doc["control"]["up"], doc["control"]["down"], doc["actual"]["acc"], 0.005, 4.0, 4.0);
+    float dir = addVal(doc["control"]["right"], doc["control"]["left"], doc["actual"]["dir"], 0.005, 4.0, 1.0);
+    setPWM(acc, PWM_CHANNEL_1, PWM_CHANNEL_2);
+    setPWM(acc, PWM_CHANNEL_3, PWM_CHANNEL_4);
+    setServo(dir, SERVO_CH1);
+    setServo(dir, SERVO_CH2);
+    doc["actual"]["dir"] = dir;
+    doc["actual"]["acc"] = acc;
+    bool light = doc["control"]["light"];
+    digitalWrite(OC_CH1, light);
+    digitalWrite(OC_CH2, light);
+    digitalWrite(BEEP, doc["control"]["beep"]);
+    tspd = now;
+    return true;
+  }
+  return false;
+}
+
 void setup(void) {
   pinMode(led, OUTPUT);
   digitalWrite(led, 0);
@@ -168,6 +252,10 @@ void setup(void) {
   Serial.println("");
 
 #ifdef AP_MODE
+  // Create SSID out of MAC
+  uint8_t mac[6];
+  WiFi.macAddress(mac);
+  sprintf(ssid, "%s%02X%02X%02X", ssid, mac[3], mac[4], mac[5]);
   // Create AP
   Serial.print("Create AP: ");
   Serial.println(ssid);
@@ -249,7 +337,7 @@ void setup(void) {
   Serial.println(WiFi.localIP());
 #endif
 
-  if (MDNS.begin("esp32")) {
+  if (MDNS.begin(ssid)) {
     Serial.println("MDNS responder started");
   }
 
@@ -268,92 +356,6 @@ void setup(void) {
   Serial.println("HTTP server started");
 }
 
-bool pollBatteryVoltage(uint32_t now) {
-  static uint32_t tbat = 0;
-  static int buff[16];
-  static int p = 0;
-  if ((now - tbat) >= 100) {
-    buff[p++] = analogRead(bat);
-    p &= 0x0F;
-    int adc = 0;
-    for (int i=0; i<16; i++)
-      adc += buff[i];
-    doc["actual"]["bat"] = (float)adc * (6.94 / (1380 * 16));
-    tbat = now; //+= 100;
-    return true;
-  }
-  return false;
-}
-
-float addVal(bool add, bool sub, float val, float dt, float speed, float decay) {
-  float v = val;
-  if (add) {
-    v += dt * speed;
-    if (v > 1.0)
-      v = 1.0;
-  }
-  else if (sub) {
-    v -= dt * speed;
-    if (v < -1.0)
-      v = -1.0;
-  }
-  else if (v > 0.0) {
-    v -= dt * decay;
-    if (v < 0.0) {
-      v = 0.0;
-    }
-  }
-  else if (v < 0.0) {
-    v += dt * decay;
-    if (v > 0.0) {
-      v = 0.0;
-    }
-  }
-  return v;
-}
-
-void setPWM(float val, const int pwmP, const int pwmN) {
-  int dc = 255.0 * abs(val) * ((float)PWM_LIMIT / 100.0);
-  if (dc > 255)
-    dc = 255;
-  if (val > 0) {
-    ledcWrite(pwmN, 0);
-    ledcWrite(pwmP, dc);
-  }
-  else {
-    ledcWrite(pwmP, 0);
-    ledcWrite(pwmN, dc);
-  }
-}
-
-void setServo(float val, const int pwm) {
-  int dc = 204.8 * (1.5 + val / 2.0 * (SERVO_SWAP ? -1.0 : 1.0) * ((float)SERVO_LIMIT / 100.0));
-  if (dc > 410) dc = 410;
-  if (dc < 205) dc = 205;
-  ledcWrite(pwm, dc);
-}
-
-bool pollControl(uint32_t now) {
-  static uint32_t tspd = 0;
-  if ((now - tspd) >= 5) {
-    float acc = addVal(doc["control"]["up"], doc["control"]["down"], doc["actual"]["acc"], 0.005, 4.0, 2.5);
-    float dir = addVal(doc["control"]["right"], doc["control"]["left"], doc["actual"]["dir"], 0.005, 3.0, 1.0);
-    setPWM(acc, PWM_CHANNEL_1, PWM_CHANNEL_2);
-    setPWM(acc, PWM_CHANNEL_3, PWM_CHANNEL_4);
-    setServo(dir, SERVO_CH1);
-    setServo(dir, SERVO_CH2);
-    doc["actual"]["dir"] = dir;
-    doc["actual"]["acc"] = acc;
-    bool light = doc["control"]["light"];
-    digitalWrite(OC_CH1, light);
-    digitalWrite(OC_CH2, light);
-    digitalWrite(BEEP, doc["control"]["beep"]);
-    tspd = now;
-    return true;
-  }
-  return false;
-}
-
 void loop(void) {
   server.handleClient();
   
@@ -367,5 +369,5 @@ void loop(void) {
     doc["cnt"] = cnt;
     tcnt = now; //+= 1000;
   }
-  else delay(1);//allow the cpu to switch to other tasks
+  else delay(1);//allow the cpu to switch to other tasks (which? duno!)
 }
